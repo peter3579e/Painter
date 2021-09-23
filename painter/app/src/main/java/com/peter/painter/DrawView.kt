@@ -1,0 +1,244 @@
+package com.peter.painter
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.*
+import android.os.Build
+import android.util.AttributeSet
+import android.util.Log
+import android.view.MotionEvent
+import android.view.View
+import androidx.annotation.RequiresApi
+import java.lang.Math.abs
+import java.util.*
+
+
+class DrawView (context: Context?, attrs: AttributeSet? = null) :
+    View(context, attrs) {
+    private var erase = false
+    private var mX = 0f
+    private var mY = 0f
+    private var mPath: Path? = null
+    private var isSave: Boolean? = null
+    private var redoPath :Stack<Stroke>? = Stack<Stroke>()
+
+    // the Paint class encapsulates the color
+    // and style information about
+    // how to draw the geometries,text and bitmaps
+    private val mPaint: Paint
+
+    // ArrayList to store all the strokes
+    // drawn by the user on the Canvas
+    private var paths = ArrayList<Stroke>()
+    private var currentColor = 0
+    private var strokeWidth = 0
+    private var eraseWidth = 100
+    private var mBitmap: Bitmap? = null
+    private var mCanvas: Canvas? = null
+    private val mBitmapPaint = Paint(Paint.DITHER_FLAG)
+
+    // this method instantiate the bitmap and object
+    fun init(height: Int, width: Int) {
+        mBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        mCanvas = Canvas(mBitmap!!)
+        val backgroundColor = Color.WHITE
+        mCanvas!!.drawColor(backgroundColor)
+
+        // set an initial color of the brush
+        currentColor = Color.GREEN
+
+        // set an initial brush size
+        strokeWidth = 20
+    }
+
+    // sets the current color of stroke
+    fun setColor(color: Int) {
+        currentColor = color
+    }
+
+    // sets the stroke width
+    fun setStrokeWidth(width: Int) {
+        strokeWidth = width
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    fun restoreImage(bitmap: Bitmap?){
+
+        // Initialize a new Canvas instance
+        mCanvas = Canvas(bitmap!!)
+
+        mBitmap = bitmap
+        mCanvas!!.drawBitmap(mBitmap!!, 100f, 100f, mBitmapPaint)
+
+
+
+    }
+
+
+    fun undo() {
+        // check whether the List is empty or not
+        // if empty, the remove method will return an error
+        if (paths.size != 0) {
+            redoPath?.push(paths[paths.size - 1])
+            Log.d("the value of save state", "the value = $redoPath")
+            paths.removeAt(paths.size - 1)
+            invalidate()
+        }
+    }
+
+    // this methods returns the current bitmap
+    fun save(): Bitmap? {
+        return mBitmap
+    }
+
+    @SuppressLint("LongLogTag")
+    fun redo (){
+        if (redoPath!!.isNotEmpty()){
+            Log.d("the value of redo when redo state", "the value = $redoPath")
+            paths.add(redoPath?.pop()!!)
+            Log.d("the value of redo when redo state", "the value = $redoPath")
+            invalidate()
+        }
+    }
+
+    // this is the main method where
+    // the actual drawing takes place
+    override fun onDraw(canvas: Canvas) {
+        // save the current state of the canvas before,
+        // to draw the background of the canvas
+        canvas.save()
+
+        Log.d("Draw has run","RUn!!")
+
+
+        // DEFAULT color of the canvas
+
+        val backgroundColor = Color.WHITE
+        mCanvas!!.drawColor(backgroundColor)
+
+        // now, we iterate over the list of paths
+        // and draw each path on the canvas
+        for (fp in paths) {
+            Log.d("Draw has run","for loop RUn!!")
+            mPaint.color = fp.color
+            mPaint.strokeWidth = fp.strokeWidth.toFloat()
+            mCanvas!!.drawPath(fp.path, mPaint)
+        }
+        canvas.drawBitmap(mBitmap!!, 0f, 0f, mBitmapPaint)
+
+        canvas.restore()
+    }
+
+    // the below methods manages the touch
+    // response of the user on the screen
+    // firstly, we create a new Stroke
+    // and add it to the paths list
+    private fun touchStart(x: Float, y: Float) {
+        mPath = Path()
+        var width = 0
+        width = if (erase){
+            eraseWidth
+        }else{
+            strokeWidth
+        }
+        val fp = Stroke(
+            currentColor, width,
+            mPath!!
+        )
+        paths.add(fp)
+
+
+        // finally remove any curve
+        // or line from the path
+        mPath!!.reset()
+
+        // this methods sets the starting
+        // point of the line being drawn
+        mPath!!.moveTo(x, y)
+
+        // we save the current
+        // coordinates of the finger
+        mX = x
+        mY = y
+    }
+
+    // in this method we check
+    // if the move of finger on the
+    // screen is greater than the
+    // Tolerance we have previously defined,
+    // then we call the quadTo() method which
+    // actually smooths the turns we create,
+    // by calculating the mean position between
+    // the previous position and current position
+    private fun touchMove(x: Float, y: Float) {
+        val dx = kotlin.math.abs(x - mX)
+        val dy = kotlin.math.abs(y - mY)
+        if (dx >= TOUCH_TOLERANCE || dy >= TOUCH_TOLERANCE) {
+            mPath!!.quadTo(mX, mY, (x + mX) / 2, (y + mY) / 2)
+            mX = x
+            mY = y
+        }
+    }
+
+    // at the end, we call the lineTo method
+    // which simply draws the line until
+    // the end position
+    private fun touchUp() {
+        mPath!!.lineTo(mX, mY)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    fun setErase(isErase: Boolean) {
+        erase = isErase
+        if (erase) {
+            setColor(Color.parseColor("#ffffffff"))
+        }
+    }
+
+    // the onTouchEvent() method provides us with
+    // the information about the type of motion
+    // which has been taken place, and according
+    // to that we call our desired methods
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val x = event.x
+        val y = event.y
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                touchStart(x, y)
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                touchMove(x, y)
+                invalidate()
+            }
+            MotionEvent.ACTION_UP -> {
+                touchUp()
+                invalidate()
+            }
+        }
+        return true
+    }
+
+    companion object {
+        private const val TOUCH_TOLERANCE = 4f
+    }
+
+    // Constructors to initialise all the attributes
+    init {
+        mPaint = Paint()
+
+        // the below methods smoothens
+        // the drawings of the user
+        mPaint.isAntiAlias = true
+        mPaint.isDither = true
+        mPaint.color = Color.GREEN
+        mPaint.style = Paint.Style.STROKE
+        mPaint.strokeJoin = Paint.Join.ROUND
+        mPaint.strokeCap = Paint.Cap.ROUND
+
+        // 0xff=255 in decimal
+        mPaint.alpha = 0xff
+    }
+}
+
+//set erase true or false
